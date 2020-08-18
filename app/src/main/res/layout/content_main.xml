@@ -4,20 +4,22 @@
     xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    tools:showIn="@layout/activity_main">
+    tools:showIn="@layout/activity_main"
+    >
 
     <TextView
-        android:id="@+id/things_lbl"
+        android:id="@+id/text_view_things_label"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_marginStart="16dp"
         android:layout_marginTop="24dp"
         android:text="Things to permutate: "
         app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toTopOf="parent" />
+        app:layout_constraintTop_toTopOf="parent"
+        />
 
     <EditText
-        android:id="@+id/things_input"
+        android:id="@+id/edit_text_things"
         android:layout_width="0dp"
         android:layout_height="wrap_content"
         android:layout_marginStart="16dp"
@@ -25,33 +27,36 @@
         android:inputType="textCapWords"
         android:minWidth="64dp"
         android:selectAllOnFocus="true"
-        app:layout_constraintBaseline_toBaselineOf="@id/things_lbl"
+        app:layout_constraintBaseline_toBaselineOf="@id/text_view_things_label"
         app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintStart_toEndOf="@id/things_lbl"
-        tools:text="A B C D E F">
+        app:layout_constraintStart_toEndOf="@id/text_view_things_label"
+        tools:text="A B C D E F"
+        >
 
         <requestFocus />
     </EditText>
 
     <TextView
-        android:id="@+id/size_lbl"
+        android:id="@+id/text_view_size_label"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_marginStart="16dp"
         android:layout_marginTop="48dp"
         android:text="Size: "
         app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toBottomOf="@id/things_lbl" />
+        app:layout_constraintTop_toBottomOf="@id/text_view_things_label"
+        />
 
     <EditText
-        android:id="@+id/size_input"
+        android:id="@+id/edit_text_size"
         android:layout_width="0dp"
         android:layout_height="wrap_content"
         android:layout_marginEnd="16dp"
         android:inputType="number"
-        app:layout_constraintBaseline_toBaselineOf="@id/size_lbl"
+        app:layout_constraintBaseline_toBaselineOf="@id/text_view_size_label"
         app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintStart_toStartOf="@id/things_input" />
+        app:layout_constraintStart_toStartOf="@id/edit_text_things"
+        />
 
     <com.qtalk.recyclerviewfastscroller.RecyclerViewFastScroller
         android:id="@+id/scroller_container"
@@ -62,13 +67,14 @@
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toBottomOf="@+id/size_input">
+        app:layout_constraintTop_toBottomOf="@+id/edit_text_size">
 
         <androidx.recyclerview.widget.RecyclerView
             android:id="@+id/recycler_view"
             android:layout_width="match_parent"
             android:layout_height="match_parent"
             android:scrollbars="none"
-            app:layoutManager="androidx.recyclerview.widget.LinearLayoutManager" />
+            app:layoutManager="androidx.recyclerview.widget.LinearLayoutManager"
+            />
     </com.qtalk.recyclerviewfastscroller.RecyclerViewFastScroller>
 </androidx.constraintlayout.widget.ConstraintLayout>

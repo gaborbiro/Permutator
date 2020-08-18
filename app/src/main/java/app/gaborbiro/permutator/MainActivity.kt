@@ -1,9 +1,14 @@
 package app.gaborbiro.permutator
 
+import android.content.SharedPreferences
 import android.os.Bundle
 import android.text.Editable
 import android.view.View
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.content.edit
+import androidx.preference.PreferenceManager
+import com.google.gson.Gson
+import com.google.gson.reflect.TypeToken
 import io.reactivex.Observable
 import io.reactivex.android.schedulers.AndroidSchedulers
 import io.reactivex.disposables.Disposable
@@ -17,48 +22,81 @@ import java.util.*
 
 class MainActivity : AppCompatActivity() {
 
-    private val adapter: PermutatorAdapter = PermutatorAdapter()
+    private val adapter: PermutatorAdapter = PermutatorAdapter {
+        prefs.edit {
+            putString(PREF_PERMUTATIONS, gson.toJson(it))
+        }
+    }
 
     private var subscription: Disposable? = null
     private var currentThings: List<String>? = null
     private var currentSize: Int? = null
     private var lastProgress: Int? = null
 
+    private val gson = Gson()
+    private val prefs: SharedPreferences by lazy {
+        PreferenceManager.getDefaultSharedPreferences(
+            this
+        )
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
         setSupportActionBar(toolbar)
 
-        things_input.addTextChangedListener(object : TextWatcherAdapter() {
+        edit_text_things.setText(prefs.getString(PREF_THINGS, ""))
+        edit_text_things.addTextChangedListener(object : TextWatcherAdapter() {
 
             override fun afterTextChanged(editable: Editable?) {
+                prefs.edit {
+                    putString(PREF_THINGS, editable?.toString())
+                }
                 onInputUpdated()
             }
         })
-        size_input.addTextChangedListener(object : TextWatcherAdapter() {
+
+        edit_text_size.setText(prefs.getString(PREF_SIZE, ""))
+        edit_text_size.addTextChangedListener(object : TextWatcherAdapter() {
 
             override fun afterTextChanged(editable: Editable?) {
+                prefs.edit {
+                    putString(PREF_SIZE, editable?.toString())
+                }
                 onInputUpdated()
             }
         })
+
         recycler_view.adapter = adapter
+        button_clear.setOnClickListener {
+            prefs.edit {
+                remove(PREF_PERMUTATIONS)
+                remove(PREF_THINGS)
+                remove(PREF_SIZE)
+            }
+        }
+        prefs.getString(PREF_PERMUTATIONS, null)?.let {
+            val checkType = object : TypeToken<List<Permutation>>() {}.type
+            val things: List<Permutation> = gson.fromJson(it, checkType)
+            adapter.data = things
+        }
     }
 
     private fun onInputUpdated() {
-        val things = things_input.text.toString()
-        val size = size_input.text.toString()
+        val things = edit_text_things.text.toString()
+        val size = edit_text_size.text.toString()
 
         if (things.isNotEmpty() && size.isNotEmpty()) {
-            val thingsArray =
+            val thingsList: List<String> =
                 things.split("[,;\\s]+".toRegex()).map { it.toLowerCase().capitalize().trim() }
                     .filter { it.isNotBlank() }
             val sizeInt = size.toInt()
 
-            if (currentThings?.equals(thingsArray) == false || currentSize != sizeInt) {
+            if (currentThings?.equals(thingsList) == false || currentSize != sizeInt) {
                 subscription?.dispose()
-                currentThings = thingsArray
+                currentThings = thingsList
                 currentSize = sizeInt
-                subscription = generate(thingsArray, sizeInt)
+                subscription = generate(thingsList, sizeInt)
                     .subscribeOn(Schedulers.computation())
                     .observeOn(AndroidSchedulers.mainThread())
                     .subscribe {
@@ -71,7 +109,17 @@ class MainActivity : AppCompatActivity() {
                             text_view_progress.hide()
                             progress_indicator.visibility = View.GONE
                             scroller_container.show()
-                            adapter.data = it.content?.toList()
+                            it.content?.toList()?.let {
+                                adapter.data = it
+                                prefs.edit {
+                                    putString(PREF_PERMUTATIONS, gson.toJson(it))
+                                }
+                            } ?: run {
+                                adapter.data = null
+                                prefs.edit {
+                                    remove(PREF_PERMUTATIONS)
+                                }
+                            }
                         }
                     }
             }
@@ -126,3 +174,7 @@ class MainActivity : AppCompatActivity() {
         candidate.clear(index)
     }
 }
+
+private const val PREF_THINGS = "PREF_THINGS"
+private const val PREF_SIZE = "PREF_SIZE"
+private const val PREF_PERMUTATIONS = "PREF_PERMUTATION"

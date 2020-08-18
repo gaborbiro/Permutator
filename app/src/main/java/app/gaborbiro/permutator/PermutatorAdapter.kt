@@ -1,17 +1,16 @@
 package app.gaborbiro.permutator
 
-import android.view.Gravity
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.widget.CompoundButton
 import android.widget.LinearLayout
-import android.widget.TextView
 import androidx.recyclerview.widget.RecyclerView
 import com.qtalk.recyclerviewfastscroller.RecyclerViewFastScroller
 import kotlinx.android.synthetic.main.list_item_candidate.view.*
 
-class PermutatorAdapter : RecyclerView.Adapter<PermutationVH>(),
+class PermutatorAdapter(private val onDataChanged: (List<Permutation>) -> Unit) :
+    RecyclerView.Adapter<PermutationVH>(),
     RecyclerViewFastScroller.OnPopupTextUpdate {
 
     var data: List<Permutation>? = null
@@ -24,6 +23,7 @@ class PermutatorAdapter : RecyclerView.Adapter<PermutationVH>(),
         data?.let {
             holder.bind(position + 1, it[position]) { _, isChecked ->
                 it[position].checked = isChecked
+                onDataChanged.invoke(it)
             }
         }
     }
@@ -57,7 +57,6 @@ class PermutationVH(itemView: View) : RecyclerView.ViewHolder(itemView) {
         itemView.checked.isChecked = data.checked
         itemView.checked.setOnCheckedChangeListener(checkedChangeListener)
         itemView.text_view_index.text = "$position."
-        container.removeViews(2, container.childCount - 2)
         val layoutParams = LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.WRAP_CONTENT,
             ViewGroup.LayoutParams.WRAP_CONTENT
@@ -65,12 +64,6 @@ class PermutationVH(itemView: View) : RecyclerView.ViewHolder(itemView) {
         layoutParams.marginStart =
             container.context.resources.getDimensionPixelSize(R.dimen.margin_normal)
 
-        data.things.forEachIndexed { index, item ->
-            val thing = TextView(container.context)
-            thing.gravity = Gravity.CENTER_HORIZONTAL
-            thing.id = index
-            thing.text = item
-            container.addView(thing, layoutParams)
-        }
+        itemView.checked.text = data.things.joinToString(" ")
     }
 }
