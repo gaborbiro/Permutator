@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<androidx.constraintlayout.helper.widget.Flow
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:id="@+id/flow_actions"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:layout_marginHorizontal="16dp"
+    android:layout_marginTop="16dp"
+    android:orientation="horizontal"
+    app:flow_horizontalBias="0"
+    app:flow_horizontalGap="4dp"
+    app:flow_horizontalStyle="packed"
+    app:flow_wrapMode="chain"
+    />

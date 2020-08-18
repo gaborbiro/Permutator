@@ -4,9 +4,11 @@ import android.content.SharedPreferences
 import android.os.Bundle
 import android.text.Editable
 import android.view.View
+import android.view.ViewGroup
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.edit
 import androidx.preference.PreferenceManager
+import com.google.android.material.chip.Chip
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
 import io.reactivex.Observable
@@ -17,6 +19,7 @@ import io.reactivex.subjects.PublishSubject
 import io.reactivex.subjects.Subject
 import kotlinx.android.synthetic.main.activity_main.*
 import kotlinx.android.synthetic.main.content_main.*
+import kotlinx.android.synthetic.main.flow_actions.view.*
 import java.util.*
 
 
@@ -45,23 +48,29 @@ class MainActivity : AppCompatActivity() {
         setContentView(R.layout.activity_main)
         setSupportActionBar(toolbar)
 
-        edit_text_things.setText(prefs.getString(PREF_THINGS, ""))
+        val thingsStr = prefs.getString(PREF_THINGS, null)
+        edit_text_things.setText(thingsStr)
         edit_text_things.addTextChangedListener(object : TextWatcherAdapter() {
 
             override fun afterTextChanged(editable: Editable?) {
                 prefs.edit {
-                    putString(PREF_THINGS, editable?.toString())
+                    putString(
+                        PREF_THINGS,
+                        editable?.toString()?.trim()?.let { if (it.isNotBlank()) it else null })
                 }
                 onInputUpdated()
             }
         })
 
-        edit_text_size.setText(prefs.getString(PREF_SIZE, ""))
+        val sizeStr = prefs.getString(PREF_SIZE, null)
+        edit_text_size.setText(sizeStr)
         edit_text_size.addTextChangedListener(object : TextWatcherAdapter() {
 
             override fun afterTextChanged(editable: Editable?) {
                 prefs.edit {
-                    putString(PREF_SIZE, editable?.toString())
+                    putString(
+                        PREF_SIZE,
+                        editable?.toString()?.trim()?.let { if (it.isNotBlank()) it else null })
                 }
                 onInputUpdated()
             }
@@ -74,29 +83,41 @@ class MainActivity : AppCompatActivity() {
                 remove(PREF_THINGS)
                 remove(PREF_SIZE)
             }
+            edit_text_things.text = null
+            edit_text_size.text = null
+            adapter.data = null
+            clearActionsContainer()
         }
         prefs.getString(PREF_PERMUTATIONS, null)?.let {
             val checkType = object : TypeToken<List<Permutation>>() {}.type
-            val things: List<Permutation> = gson.fromJson(it, checkType)
-            adapter.data = things
+            adapter.data = gson.fromJson(it, checkType)
         }
+
+        Pair(thingsStr, sizeStr).notNull { thingsStr, sizeStr ->
+            val things: List<String> = mapThingsStr(thingsStr)
+            val size = sizeStr.toInt()
+            setupActions(things, size)
+        }
+
+        toggle_advanced.setOnCheckedChangeListener { _, isChecked ->
+            flow_actions_container.visibility = if (isChecked) View.VISIBLE else View.GONE
+        }
+        flow_actions_container.visibility = View.GONE
     }
 
     private fun onInputUpdated() {
-        val things = edit_text_things.text.toString()
-        val size = edit_text_size.text.toString()
+        val thingsStr = edit_text_things.text.toString()
+        val sizeStr = edit_text_size.text.toString()
 
-        if (things.isNotEmpty() && size.isNotEmpty()) {
-            val thingsList: List<String> =
-                things.split("[,;\\s]+".toRegex()).map { it.toLowerCase().capitalize().trim() }
-                    .filter { it.isNotBlank() }
-            val sizeInt = size.toInt()
+        if (thingsStr.isNotEmpty() && sizeStr.isNotEmpty()) {
+            val things: List<String> = mapThingsStr(thingsStr)
+            val size: Int = sizeStr.toInt()
 
-            if (currentThings?.equals(thingsList) == false || currentSize != sizeInt) {
+            if (currentThings?.equals(things) == false || currentSize != size) {
                 subscription?.dispose()
-                currentThings = thingsList
-                currentSize = sizeInt
-                subscription = generate(thingsList, sizeInt)
+                currentThings = things
+                currentSize = size
+                subscription = generate(things, size)
                     .subscribeOn(Schedulers.computation())
                     .observeOn(AndroidSchedulers.mainThread())
                     .subscribe {
@@ -112,7 +133,10 @@ class MainActivity : AppCompatActivity() {
                             it.content?.toList()?.let {
                                 adapter.data = it
                                 prefs.edit {
-                                    putString(PREF_PERMUTATIONS, gson.toJson(it))
+                                    putString(
+                                        PREF_PERMUTATIONS,
+                                        if (it.isNotEmpty()) gson.toJson(it) else null
+                                    )
                                 }
                             } ?: run {
                                 adapter.data = null
@@ -124,6 +148,22 @@ class MainActivity : AppCompatActivity() {
                     }
             }
         }
+    }
+
+    private fun setupActions(things: List<String>, size: Int) {
+        clearActionsContainer()
+        for (i in 0 until size) {
+            things.forEach { thing ->
+                addAction("$i - $thing") {
+
+                }
+            }
+        }
+    }
+
+    private fun mapThingsStr(thingsStr: String): List<String> {
+        return thingsStr.split("[,;\\s]+".toRegex()).map { it.toLowerCase().capitalize().trim() }
+            .filter { it.isNotBlank() }
     }
 
     private fun generate(things: List<String>, size: Int): Observable<Lce<Array<Permutation>>> {
@@ -172,6 +212,32 @@ class MainActivity : AppCompatActivity() {
             }
         }
         candidate.clear(index)
+    }
+
+    private fun addAction(title: String, onClicked: () -> Unit) {
+        getActionsContainer().inflate(R.layout.list_item_action).also { chip ->
+            chip.id = View.generateViewId()
+            (chip as Chip).text = title
+            getActionsContainer().apply {
+                addView(chip)
+                flow_actions.addView(chip)
+                flow_actions.requestLayout()
+            }
+            chip.setOnClickListener {
+                onClicked.invoke()
+            }
+        }
+    }
+
+    private fun getActionsContainer(): ViewGroup {
+        if (flow_actions_container.childCount == 0) {
+            flow_actions_container.add(R.layout.flow_actions)
+        }
+        return flow_actions_container
+    }
+
+    private fun clearActionsContainer() {
+        flow_actions_container.removeAllViews()
     }
 }
 
