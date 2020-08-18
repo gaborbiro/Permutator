@@ -96,7 +96,7 @@ class MainActivity : AppCompatActivity() {
         Pair(thingsStr, sizeStr).notNull { thingsStr, sizeStr ->
             val things: List<String> = mapThingsStr(thingsStr)
             val size = sizeStr.toInt()
-            setupActions(things, size)
+            setupAdvancedActions(things, size)
         }
 
         toggle_advanced.setOnCheckedChangeListener { _, isChecked ->
@@ -146,16 +146,28 @@ class MainActivity : AppCompatActivity() {
                             }
                         }
                     }
+                setupAdvancedActions(things, size)
             }
         }
     }
 
-    private fun setupActions(things: List<String>, size: Int) {
+    private fun setupAdvancedActions(things: List<String>, size: Int) {
         clearActionsContainer()
         for (i in 0 until size) {
             things.forEach { thing ->
-                addAction("$i - $thing") {
-
+                addAction("${i + 1} - $thing") {
+                    adapter.data?.forEach {
+                        if (it.things[i] == thing) {
+                            it.checked = true
+                        }
+                    }
+                    adapter.notifyDataSetChanged()
+                    prefs.edit {
+                        putString(
+                            PREF_PERMUTATIONS,
+                            if (adapter.data?.isNotEmpty() == true) gson.toJson(adapter.data) else null
+                        )
+                    }
                 }
             }
         }
