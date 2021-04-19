@@ -8,6 +8,7 @@ import android.view.ViewGroup
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.edit
 import androidx.preference.PreferenceManager
+import app.gaborbiro.permutator.uptime.UptimeService
 import com.google.android.material.chip.Chip
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
@@ -103,6 +104,10 @@ class MainActivity : AppCompatActivity() {
             flow_actions_container.visibility = if (isChecked) View.VISIBLE else View.GONE
         }
         flow_actions_container.visibility = View.GONE
+
+        button_settings.setOnClickListener {
+            UptimeService.start(this)
+        }
     }
 
     private fun onInputUpdated() {

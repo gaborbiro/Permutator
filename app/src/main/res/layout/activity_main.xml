@@ -38,6 +38,17 @@
                 android:textOff="Simple"
                 android:textOn="Advanced"
                 />
+
+            <ImageView
+                android:id="@+id/button_settings"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_gravity="center_vertical"
+                android:foreground="?selectableItemBackgroundBorderless"
+                android:padding="@dimen/margin_normal"
+                android:src="@drawable/ic_icon_gear"
+                app:tint="@android:color/white"
+                />
         </LinearLayout>
     </androidx.appcompat.widget.Toolbar>
 
