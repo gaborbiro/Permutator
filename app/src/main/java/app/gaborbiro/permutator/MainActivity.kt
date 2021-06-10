@@ -105,8 +105,21 @@ class MainActivity : AppCompatActivity() {
         }
         flow_actions_container.visibility = View.GONE
 
-        button_settings.setOnClickListener {
-            UptimeService.start(this)
+        switch_settings.setOnCheckedChangeListener { _, isChecked ->
+            if (isChecked) {
+                UptimeService.start(this)
+            } else {
+                UptimeService.stop(this)
+            }
+        }
+
+        observe((application as PermutatorApp).uptimeState, ::handleUptimeState)
+    }
+
+    private fun handleUptimeState(state: UptimeState?) {
+        when(state) {
+            UptimeState.Disabled -> switch_settings.isChecked = false
+            else -> switch_settings.isChecked = true
         }
     }
 

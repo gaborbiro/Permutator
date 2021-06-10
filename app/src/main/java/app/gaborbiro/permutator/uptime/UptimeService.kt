@@ -1,28 +1,22 @@
 package app.gaborbiro.permutator.uptime
 
-import android.app.Activity
-import android.app.NotificationChannel
-import android.app.NotificationManager
-import android.app.PendingIntent
-import android.app.Service
+import android.annotation.SuppressLint
+import android.app.*
 import android.content.Context
 import android.content.Intent
-import android.os.Build
-import android.os.Handler
-import android.os.HandlerThread
-import android.os.IBinder
-import android.os.Looper
-import android.os.Message
-import android.os.PowerManager
+import android.net.ConnectivityManager
+import android.net.Network
+import android.net.NetworkCapabilities
+import android.net.NetworkRequest
+import android.os.*
 import android.widget.Toast
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
+import androidx.core.content.getSystemService
 import app.gaborbiro.permutator.PermutatorApp
 import app.gaborbiro.permutator.R
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.GlobalScope
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
+import app.gaborbiro.permutator.UptimeState
+import kotlinx.coroutines.*
 import java.util.concurrent.TimeUnit
 
 class UptimeService : Service() {
@@ -37,21 +31,27 @@ class UptimeService : Service() {
         }
 
         fun stop(parent: Activity) {
-            parent.startService(getStopIntent(parent))
+            parent.startService(getStopIntent(parent, clearBackOnlineNotification = true))
         }
 
-        fun getStopIntent(context: Context) = Intent(context, UptimeService::class.java).also {
-            it.putExtra(EXTRA_COMMAND, COMMAND_STOP)
-        }
+        fun getStopIntent(context: Context, clearBackOnlineNotification: Boolean) =
+            Intent(context, UptimeService::class.java).also {
+                it.putExtra(EXTRA_COMMAND, COMMAND_STOP)
+                it.putExtra(EXTRA_CLEAR_BO_NOTIFICATION, clearBackOnlineNotification)
+            }
     }
 
     private lateinit var serviceLooper: Looper
     private lateinit var serviceHandler: ServiceHandler
+    private lateinit var handler: Handler
     private var wakeLock: PowerManager.WakeLock? = null
+    private var callback: ConnectivityManager.NetworkCallback? = null
+    private val connectivityManager: ConnectivityManager by lazy { applicationContext.getSystemService()!! }
+    private var pingJob: Job? = null
 
     private inner class ServiceHandler(looper: Looper) : Handler(looper) {
         override fun handleMessage(msg: Message) {
-            onHandleIntent(msg.obj as Intent)
+            onHandleIntent(msg.obj as Intent?)
         }
     }
 
@@ -64,21 +64,19 @@ class UptimeService : Service() {
 
         serviceLooper = thread.looper
         serviceHandler = ServiceHandler(serviceLooper)
+        handler = Handler(serviceLooper)
     }
 
     private fun onHandleIntent(intent: Intent?) {
         when (intent?.getStringExtra(EXTRA_COMMAND)) {
-            COMMAND_START -> startConnectivityCheck()
-            COMMAND_STOP -> stopConnectivityCheck()
-            else -> {
-            }
+            COMMAND_START -> postEvent(UptimeEvent.Start)
+            COMMAND_STOP -> postEvent(UptimeEvent.Stop)
         }
     }
 
+    @SuppressLint("WakelockTimeout")
     private fun startConnectivityCheck() {
         setBackgroundNotificationEnabled(true)
-        sendStatus(enabled = true)
-
         wakeLock?.let {
             if (it.isHeld) {
                 it.release()
@@ -90,29 +88,48 @@ class UptimeService : Service() {
             }
         }
 
-        val status = (application as PermutatorApp).uptimeServiceRunning
-        var isInternetAvailable = false
-        GlobalScope.launch(Dispatchers.IO) {
-            while (status.value == true && !isInternetAvailable) {
-                isInternetAvailable = isInternetAvailable()
-                if (isInternetAvailable) {
-                    showBackOnlineNotification()
-                    stopConnectivityCheck()
-                } else {
-                    launch(Dispatchers.Main) {
-                        Toast.makeText(
-                            applicationContext,
-                            "Ping (${isInternetAvailable})",
-                            Toast.LENGTH_SHORT
-                        ).show()
-                    }
-                    delay(TimeUnit.SECONDS.toMillis(10))
+        pingJob?.cancel()
+        pingJob = CoroutineScope(Dispatchers.IO).launch {
+            while (true) {
+                showMessage("ping")
+                pingNow()
+                delay(TimeUnit.SECONDS.toMillis(5))
+            }
+        }
+    }
+
+    private fun pingNow(): Boolean {
+        return canPingGoogle().also { pingSuccess ->
+            if (pingSuccess) {
+                postEvent(UptimeEvent.PingSuccess)
+            } else {
+                postEvent(UptimeEvent.PingFailed)
+            }
+        }
+    }
+
+    private fun pingWithBackoff(expectFail: Boolean, delaySecs: Int = 1) {
+        CoroutineScope(Dispatchers.IO).launch {
+            if (pingNow()) { // ping succeeded
+                if (expectFail && delaySecs < 10) {
+                    handler.postDelayed({
+                        showMessage("ping at $delaySecs secs")
+                        pingWithBackoff(expectFail, delaySecs * 2)
+                    }, this, delaySecs * 1000L)
+                }
+            } else { // ping failed
+                if (!expectFail && delaySecs < 10) {
+                    handler.postDelayed({
+                        showMessage("ping at $delaySecs secs")
+                        pingWithBackoff(expectFail, delaySecs * 2)
+                    }, this, delaySecs * 1000L)
                 }
             }
         }
     }
 
     private fun stopConnectivityCheck() {
+        pingJob?.cancel()
         try {
             wakeLock?.let {
                 if (it.isHeld) {
@@ -138,42 +155,141 @@ class UptimeService : Service() {
         return null
     }
 
+    private fun startNetworkAvailabilityListener() {
+        callback = object : ConnectivityManager.NetworkCallback() {
+            override fun onAvailable(network: Network) {
+                super.onAvailable(network)
+                postEvent(UptimeEvent.NetworkAvailable)
+            }
+
+            override fun onUnavailable() {
+                super.onUnavailable()
+                postEvent(UptimeEvent.NetworkUnavailable)
+            }
+
+            override fun onLost(network: Network) {
+                super.onLost(network)
+                postEvent(UptimeEvent.NetworkUnavailable)
+            }
+        }.also {
+            val request = NetworkRequest.Builder()
+                .addTransportType(NetworkCapabilities.TRANSPORT_CELLULAR)
+                .addTransportType(NetworkCapabilities.TRANSPORT_WIFI)
+                .build()
+            connectivityManager.registerNetworkCallback(request, it)
+        }
+    }
+
+    private fun stopNetworkAvailabilityListener() {
+        callback?.let(connectivityManager::unregisterNetworkCallback)
+        callback = null
+    }
+
     override fun onDestroy() {
+        pingJob?.cancel()
         serviceLooper.quit()
+        stopNetworkAvailabilityListener()
         setBackgroundNotificationEnabled(false)
-        sendStatus(false)
+        postEvent(UptimeEvent.Stop)
         super.onDestroy()
     }
 
-    private fun sendStatus(enabled: Boolean) {
-        (application as PermutatorApp).uptimeServiceRunning.apply {
-            if (value != enabled) {
-                (application as PermutatorApp).uptimeServiceRunning.postValue(enabled)
+    private fun postEvent(uptimeEvent: UptimeEvent) {
+        reduceUptimeState(uptimeEvent)?.let {
+            CoroutineScope(Dispatchers.Main).launch {
+                (application as PermutatorApp).uptimeState.apply {
+                    if (value != it) {
+                        (application as PermutatorApp).uptimeState.value = it
+                    }
+                }
             }
+        }
+    }
+
+    private fun reduceUptimeState(event: UptimeEvent): UptimeState? {
+        return when ((application as PermutatorApp).uptimeState.value) {
+            UptimeState.Disabled -> {
+                when (event) {
+                    UptimeEvent.Start -> {
+                        startConnectivityCheck()
+                        startNetworkAvailabilityListener()
+                        UptimeState.WaitingForOffline
+                    }
+                    // we're offline, we don't care about any other event
+                    UptimeEvent.Stop -> null
+                    UptimeEvent.PingFailed -> null
+                    UptimeEvent.PingSuccess -> null
+                    UptimeEvent.NetworkAvailable -> null
+                    UptimeEvent.NetworkUnavailable -> null
+                }
+            }
+            UptimeState.WaitingForOffline -> {
+                when (event) {
+                    UptimeEvent.Start -> null // already started
+                    UptimeEvent.Stop -> {
+                        stopConnectivityCheck()
+                        clearBackOnlineNotification()
+                        stopNetworkAvailabilityListener()
+                        UptimeState.Disabled
+                    }
+                    UptimeEvent.PingFailed -> {
+                        showMessage("No connection")
+                        clearBackOnlineNotification()
+                        UptimeState.WaitingForOnline
+                    }
+                    UptimeEvent.PingSuccess -> null // already online
+                    UptimeEvent.NetworkUnavailable -> {
+                        pingWithBackoff(expectFail = true)
+                        null
+                    }
+                    UptimeEvent.NetworkAvailable -> null // already online
+                }
+            }
+            UptimeState.WaitingForOnline -> {
+                when (event) {
+                    UptimeEvent.Start -> null // already started
+                    UptimeEvent.Stop -> {
+                        stopConnectivityCheck()
+                        clearBackOnlineNotification()
+                        stopNetworkAvailabilityListener()
+                        UptimeState.Disabled
+                    }
+                    UptimeEvent.PingFailed -> {
+                        clearBackOnlineNotification()
+                        null
+                    }
+                    UptimeEvent.PingSuccess -> {
+                        showBackOnlineNotification()
+                        UptimeState.WaitingForOffline
+                    }
+                    UptimeEvent.NetworkUnavailable -> null // already offline
+                    UptimeEvent.NetworkAvailable -> {
+                        pingWithBackoff(expectFail = false)
+                        null
+                    }
+                }
+            }
+            else -> null
         }
     }
 
     private fun createNotificationChannels() {
-        // Create the NotificationChannel, but only on API 26+ because
-        // the NotificationChannel class is new and not in the support library
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val importance = NotificationManager.IMPORTANCE_DEFAULT
-            val foregroundChannel = NotificationChannel(
-                CHANNEL_ID_FOREGROUND,
-                "Uptime Service Foreground",
-                importance
-            ).apply {
+        val importance = NotificationManager.IMPORTANCE_DEFAULT
+        val foregroundChannel = NotificationChannel(
+            CHANNEL_ID_FOREGROUND,
+            "Uptime Service Foreground",
+            importance
+        ).apply {
+            description = "Triggers a notification when internet is back"
+        }
+        val onlineChannel =
+            NotificationChannel(CHANNEL_ID_UPDATE, "Uptime Service Update", importance).apply {
                 description = "Triggers a notification when internet is back"
             }
-            val onlineChannel =
-                NotificationChannel(CHANNEL_ID_UPDATE, "Uptime Service Update", importance).apply {
-                    description = "Triggers a notification when internet is back"
-                }
-            // Register the channel with the system
-            val notificationManager: NotificationManager =
-                getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-            notificationManager.createNotificationChannels(listOf(foregroundChannel, onlineChannel))
-        }
+        // Register the channel with the system
+        val notificationManager: NotificationManager =
+            getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        notificationManager.createNotificationChannels(listOf(foregroundChannel, onlineChannel))
     }
 
     private fun setBackgroundNotificationEnabled(enabled: Boolean) {
@@ -181,7 +297,7 @@ class UptimeService : Service() {
             val stopIntent = PendingIntent.getService(
                 applicationContext,
                 1,
-                getStopIntent(applicationContext),
+                getStopIntent(applicationContext, clearBackOnlineNotification = false),
                 0
             )
             val builder = NotificationCompat.Builder(this, CHANNEL_ID_FOREGROUND)
@@ -197,19 +313,36 @@ class UptimeService : Service() {
     }
 
     private fun showBackOnlineNotification() {
+        val stopIntent = PendingIntent.getService(
+            applicationContext,
+            1,
+            getStopIntent(applicationContext, clearBackOnlineNotification = true),
+            0
+        )
         val builder = NotificationCompat.Builder(this, CHANNEL_ID_UPDATE)
             .setSmallIcon(R.drawable.ic_cloud_filled)
             .setContentTitle("Internet is back")
             .setPriority(NotificationCompat.PRIORITY_DEFAULT)
             .setOngoing(false)
             .setAutoCancel(true)
+            .addAction(R.drawable.ic_close, "Stop", stopIntent)
         applicationContext.getSystemService(NotificationManager::class.java)
             .notify(NOTIFICATION_ID_BACK_ONLINE, builder.build())
     }
 
-    private fun isInternetAvailable(): Boolean {
-        val command = "ping -c 1 google.com"
+    private fun clearBackOnlineNotification() {
+        getSystemService(NotificationManager::class.java).cancel(NOTIFICATION_ID_BACK_ONLINE)
+    }
+
+    private fun canPingGoogle(): Boolean {
+        val command = "ping -c 1 www.google.com"
         return Runtime.getRuntime().exec(command).waitFor() == 0
+    }
+
+    private fun showMessage(message: String) {
+        CoroutineScope(Dispatchers.Main).launch {
+            Toast.makeText(this@UptimeService, message, Toast.LENGTH_SHORT).show()
+        }
     }
 }
 
@@ -218,5 +351,6 @@ private const val CHANNEL_ID_UPDATE = "UptimeServiceUpdate"
 private const val NOTIFICATION_ID_FOREGROUND = 1001
 private const val NOTIFICATION_ID_BACK_ONLINE = 1002
 private const val EXTRA_COMMAND = "EXTRA_COMMAND"
+private const val EXTRA_CLEAR_BO_NOTIFICATION = "EXTRA_CLEAR_NOTIFICATION"
 private const val COMMAND_START = "start"
 private const val COMMAND_STOP = "stop"

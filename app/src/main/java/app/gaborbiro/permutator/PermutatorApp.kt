@@ -5,5 +5,5 @@ import androidx.lifecycle.MutableLiveData
 
 class PermutatorApp: Application() {
 
-    val uptimeServiceRunning = MutableLiveData<Boolean>()
+    val uptimeState = MutableLiveData<UptimeState>(UptimeState.Disabled)
 }
