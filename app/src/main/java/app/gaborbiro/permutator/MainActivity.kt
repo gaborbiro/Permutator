@@ -1,5 +1,6 @@
 package app.gaborbiro.permutator
 
+import android.content.Intent
 import android.content.SharedPreferences
 import android.os.Bundle
 import android.text.Editable
@@ -7,8 +8,12 @@ import android.view.View
 import android.view.ViewGroup
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.edit
+import androidx.core.content.pm.ShortcutInfoCompat
+import androidx.core.content.pm.ShortcutManagerCompat
+import androidx.core.graphics.drawable.IconCompat
 import androidx.preference.PreferenceManager
 import app.gaborbiro.permutator.uptime.UptimeService
+import app.gaborbiro.permutator.uptime.createNotificationChannels
 import com.google.android.material.chip.Chip
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
@@ -46,6 +51,15 @@ class MainActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        if (Intent.ACTION_CREATE_SHORTCUT == intent.action) {
+            setupShortcut()
+            finish()
+            return
+        } else if ("app.gaborbiro.permutator.SCAN" == intent.action) {
+            UptimeService.start(this)
+            finish()
+            return
+        }
         setContentView(R.layout.activity_main)
         setSupportActionBar(toolbar)
 
@@ -114,10 +128,24 @@ class MainActivity : AppCompatActivity() {
         }
 
         observe((application as PermutatorApp).uptimeState, ::handleUptimeState)
+
+        createNotificationChannels()
+    }
+
+    private fun setupShortcut() {
+        val shortcut: ShortcutInfoCompat = ShortcutInfoCompat.Builder(this, "scan")
+            .setIntent(Intent(this, MainActivity::class.java).apply {
+                action = "app.gaborbiro.permutator.SCAN"
+            })
+            .setIcon(IconCompat.createWithResource(this, R.drawable.ic_cloud))
+            .setShortLabel("Internet")
+            .build()
+        val intent = ShortcutManagerCompat.createShortcutResultIntent(this, shortcut)
+        setResult(RESULT_OK, intent)
     }
 
     private fun handleUptimeState(state: UptimeState?) {
-        when(state) {
+        when (state) {
             UptimeState.Disabled -> switch_settings.isChecked = false
             else -> switch_settings.isChecked = true
         }
@@ -132,7 +160,6 @@ class MainActivity : AppCompatActivity() {
             val size: Int = sizeStr.toInt()
 
             if (currentThings?.equals(things) == false || currentSize != size) {
-                subscription?.dispose()
                 currentThings = things
                 currentSize = size
                 subscription = generate(things, size)
@@ -192,8 +219,11 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun mapThingsStr(thingsStr: String): List<String> {
-        return thingsStr.split("[,;\\s]+".toRegex()).map { it.toLowerCase().capitalize().trim() }
-            .filter { it.isNotBlank() }
+        return thingsStr.split("[,;\\s]+".toRegex()).map {
+            it.lowercase(Locale.getDefault())
+                .replaceFirstChar { if (it.isLowerCase()) it.titlecase(Locale.getDefault()) else it.toString() }
+                .trim()
+        }.filter { it.isNotBlank() }
     }
 
     private fun generate(things: List<String>, size: Int): Observable<Lce<Array<Permutation>>> {

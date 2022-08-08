@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+    <shortcut
+        android:enabled="true"
+        android:shortcutId="scan"
+        android:icon="@drawable/ic_cloud"
+        android:shortcutShortLabel="@string/widget_description"
+        android:shortcutLongLabel="@string/widget_description"
+        android:shortcutDisabledMessage="@string/widget_description">
+        >
+
+        <intent
+            android:action="app.gaborbiro.permutator.SCAN"
+            android:targetClass="app.gaborbiro.permutator.uptime.UptimeService"
+            android:targetPackage="app.gaborbiro.permutator">
+        </intent>
+    </shortcut>
+</shortcuts>
