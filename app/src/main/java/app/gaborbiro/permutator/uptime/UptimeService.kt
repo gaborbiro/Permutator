@@ -70,7 +70,6 @@ class UptimeService : Service() {
 
     @SuppressLint("WakelockTimeout")
     private fun startConnectivityCheck() {
-        setBackgroundNotificationEnabled(true)
         wakeLock?.let {
             if (it.isHeld) {
                 it.release()
@@ -85,7 +84,6 @@ class UptimeService : Service() {
         pingJob?.cancel()
         pingJob = CoroutineScope(Dispatchers.IO).launch {
             while (true) {
-                showMessage("ping")
                 pingNow()
                 delay(TimeUnit.SECONDS.toMillis(5))
             }
@@ -95,8 +93,10 @@ class UptimeService : Service() {
     private fun pingNow(): Boolean {
         return canPingGoogle().also { pingSuccess ->
             if (pingSuccess) {
+                showMessage("ping success")
                 postEvent(UptimeEvent.PingSuccess)
             } else {
+                showMessage("ping fail")
                 postEvent(UptimeEvent.PingFailed)
             }
         }
@@ -183,7 +183,7 @@ class UptimeService : Service() {
         pingJob?.cancel()
         serviceLooper.quit()
         stopNetworkAvailabilityListener()
-        setBackgroundNotificationEnabled(false)
+        hideBackgroundNotification()
         postEvent(UptimeEvent.Stop)
         super.onDestroy()
     }
@@ -215,17 +215,20 @@ class UptimeService : Service() {
                     UptimeEvent.Start -> null // already started
                     UptimeEvent.Stop -> {
                         stopConnectivityCheck()
-                        clearBackOnlineNotification()
+                        hideBackgroundNotification()
                         stopNetworkAvailabilityListener()
                         UptimeState.Disabled
                     }
                     UptimeEvent.PingFailed -> {
                         showMessage("No connection")
-                        clearBackOnlineNotification()
+                        showBackgroundNotificationOffline()
                         UptimeState.WaitingForOnline
                     }
-                    UptimeEvent.PingSuccess -> null // already online
+                    UptimeEvent.PingSuccess -> {
+                        null // we just started, user already knows status
+                    }
                     UptimeEvent.NetworkUnavailable -> {
+                        showBackgroundNotificationOffline()
                         pingWithBackoff(expectFail = true)
                         null
                     }
@@ -237,19 +240,21 @@ class UptimeService : Service() {
                     UptimeEvent.Start -> null // already started
                     UptimeEvent.Stop -> {
                         stopConnectivityCheck()
-                        clearBackOnlineNotification()
+                        hideBackgroundNotification()
                         stopNetworkAvailabilityListener()
                         UptimeState.Disabled
                     }
                     UptimeEvent.PingFailed -> {
-                        clearBackOnlineNotification()
                         null
                     }
                     UptimeEvent.PingSuccess -> {
-                        showBackOnlineNotification()
+                        showBackgroundNotificationOnline()
                         UptimeState.WaitingForOffline
                     }
-                    UptimeEvent.NetworkUnavailable -> null // already offline
+                    UptimeEvent.NetworkUnavailable -> {
+                        showBackgroundNotificationOffline()
+                        null
+                    }
                     UptimeEvent.NetworkAvailable -> {
                         pingWithBackoff(expectFail = false)
                         null
@@ -262,7 +267,9 @@ class UptimeService : Service() {
 
     private fun canPingGoogle(): Boolean {
         val command = "ping -c 1 www.google.com"
-        return Runtime.getRuntime().exec(command).waitFor() == 0
+        val result = Runtime.getRuntime().exec(command).waitFor()
+        println("pinging: $result")
+        return result == 0
     }
 
     private fun showMessage(message: String) {

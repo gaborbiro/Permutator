@@ -15,9 +15,8 @@ const val COMMAND_START = "start"
 const val COMMAND_STOP = "stop"
 
 private const val CHANNEL_ID_FOREGROUND = "UptimeServiceForeground"
-private const val CHANNEL_ID_UPDATE = "UptimeServiceUpdate"
-private const val NOTIFICATION_ID_FOREGROUND = 1001
-private const val NOTIFICATION_ID_BACK_ONLINE = 1002
+private const val NOTIFICATION_ID_FOREGROUND_ONLINE = 1001
+private const val NOTIFICATION_ID_FOREGROUND_OFFLINE = 1002
 
 fun Context.createNotificationChannels() {
     val importance = NotificationManager.IMPORTANCE_DEFAULT
@@ -29,61 +28,52 @@ fun Context.createNotificationChannels() {
         description = "Triggers a notification when internet is back"
     }
 
-    val onlineChannel =
-        NotificationChannel(CHANNEL_ID_UPDATE, "Uptime Service Update", importance).apply {
-            description = "Triggers a notification when internet is back"
-        }
-
     val notificationManager: NotificationManager =
         getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
     notificationManager.createNotificationChannels(
-        listOf(
-            foregroundChannel,
-            onlineChannel,
-        )
+        listOf(foregroundChannel)
     )
 }
 
-fun Service.setBackgroundNotificationEnabled(enabled: Boolean) {
-    if (enabled) {
-        val stopIntent = PendingIntent.getService(
-            applicationContext,
-            1,
-            getScanStopIntent(clearBackOnlineNotification = false),
-            PendingIntent.FLAG_IMMUTABLE
-        )
-        val builder = NotificationCompat.Builder(this, CHANNEL_ID_FOREGROUND)
-            .setSmallIcon(R.drawable.ic_cloud)
-            .setContentTitle("Checking internet connection...")
-            .setPriority(NotificationCompat.PRIORITY_HIGH)
-            .setOngoing(true)
-            .addAction(R.drawable.ic_close, "Stop", stopIntent)
-        startForeground(NOTIFICATION_ID_FOREGROUND, builder.build())
-    } else {
-        getSystemService(NotificationManager::class.java).cancel(NOTIFICATION_ID_FOREGROUND)
-    }
-}
-
-fun Context.showBackOnlineNotification() {
+fun Service.showBackgroundNotificationOnline() {
+    hideBackgroundNotification()
     val stopIntent = PendingIntent.getService(
         applicationContext,
         1,
-        getScanStopIntent(clearBackOnlineNotification = true),
-        0
+        getScanStopIntent(clearBackOnlineNotification = false),
+        PendingIntent.FLAG_IMMUTABLE
     )
-    val builder = NotificationCompat.Builder(this, CHANNEL_ID_UPDATE)
+    val builder = NotificationCompat.Builder(this, CHANNEL_ID_FOREGROUND)
         .setSmallIcon(R.drawable.ic_cloud_filled)
-        .setContentTitle("Internet is back")
-        .setPriority(NotificationCompat.PRIORITY_DEFAULT)
-        .setOngoing(false)
-        .setAutoCancel(true)
+        .setContentTitle("Checking internet connection...")
+        .setPriority(NotificationCompat.PRIORITY_HIGH)
+        .setOngoing(true)
         .addAction(R.drawable.ic_close, "Stop", stopIntent)
-    applicationContext.getSystemService(NotificationManager::class.java)
-        .notify(NOTIFICATION_ID_BACK_ONLINE, builder.build())
+
+    startForeground(NOTIFICATION_ID_FOREGROUND_ONLINE, builder.build())
 }
 
-fun Context.clearBackOnlineNotification() {
-    getSystemService(NotificationManager::class.java).cancel(NOTIFICATION_ID_BACK_ONLINE)
+fun Service.hideBackgroundNotification() {
+    getSystemService(NotificationManager::class.java).cancel(NOTIFICATION_ID_FOREGROUND_ONLINE)
+    getSystemService(NotificationManager::class.java).cancel(NOTIFICATION_ID_FOREGROUND_OFFLINE)
+}
+
+fun Service.showBackgroundNotificationOffline() {
+    hideBackgroundNotification()
+    val stopIntent = PendingIntent.getService(
+        applicationContext,
+        1,
+        getScanStopIntent(clearBackOnlineNotification = false),
+        PendingIntent.FLAG_IMMUTABLE
+    )
+    val builder = NotificationCompat.Builder(this, CHANNEL_ID_FOREGROUND)
+        .setSmallIcon(R.drawable.ic_cloud)
+        .setContentTitle("Checking internet connection...")
+        .setPriority(NotificationCompat.PRIORITY_HIGH)
+        .setOngoing(true)
+        .addAction(R.drawable.ic_close, "Stop", stopIntent)
+
+    startForeground(NOTIFICATION_ID_FOREGROUND_OFFLINE, builder.build())
 }
 
 fun Context.getScanStopIntent(clearBackOnlineNotification: Boolean) =
